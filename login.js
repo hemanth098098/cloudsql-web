@@ -344,7 +344,8 @@ setInterval(updateClock, 1000);
 updateClock();
 
 // ── Server Wake-up & Status ───────────────────────────────────
-const SERVER = 'https://queryforge-backend-mroa.onrender.com';
+//const SERVER = 'https://queryforge-backend-mroa.onrender.com';
+const SERVER = 'https://cloudsql-web.onrender.com';
 const dot    = document.getElementById('server-dot');
 const slabel = document.getElementById('server-status-label');
 
