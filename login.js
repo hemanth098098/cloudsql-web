@@ -131,7 +131,8 @@ function handleLogin() {
 
   // API CALL
   //fetch('https://queryforge-backend-jjxx.onrender.com/login', 
-  fetch('https://queryforge-backend-mroa.onrender.com/login',{
+  //fetch('https://queryforge-backend-mroa.onrender.com/login',{
+  fetch(SERVER + '/login', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
@@ -226,7 +227,8 @@ function handleRegister() {
 
   // API CALL
   //fetch('https://queryforge-backend-jjxx.onrender.com/register', 
-  fetch('https://queryforge-backend-mroa.onrender.com/register', {
+  //fetch('https://queryforge-backend-mroa.onrender.com/register', {
+  fetch(SERVER + '/register', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
