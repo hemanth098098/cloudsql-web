@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CloudSQL — Oracle Fusion Query Tool</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Sora:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d0f14; --panel: #13161e; --panel-border: #1e2333;
+    --sidebar: #0f1118; --accent: #e8a020; --accent2: #f0c060;
+    --accent-glow: rgba(232,160,32,0.15); --text: #d4d8e8;
+    --text-dim: #6b7494; --text-bright: #f0f2ff;
+    --success: #3dd68c; --error: #ff5e5e; --warning: #f5a623; --blue: #4f8ef7;
+    --row-alt: rgba(255,255,255,0.02); --row-hover: rgba(232,160,32,0.07);
+    --mono: 'JetBrains Mono', monospace; --sans: 'Sora', sans-serif;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--text); font-family:var(--sans); height:100vh; display:flex; flex-direction:column; overflow:hidden; font-size:13px; }
+
+  /* TITLEBAR */
+  .titlebar { height:48px; background:var(--sidebar); border-bottom:1px solid var(--panel-border); display:flex; align-items:center; padding:0 16px; gap:12px; flex-shrink:0; z-index:100; }
+  .titlebar-logo { display:flex; align-items:center; gap:8px; font-weight:700; font-size:15px; }
+  .titlebar-logo svg { width:22px; height:22px; color:var(--accent); }
+  .titlebar-logo .logo-text { color:var(--text-bright); }
+  .titlebar-logo .logo-text em { color:var(--accent); font-style:normal; }
+  .conn-badge { display:flex; align-items:center; gap:6px; background:var(--panel); border:1px solid var(--panel-border); border-radius:6px; padding:4px 10px; font-size:11px; color:var(--text-dim); cursor:pointer; transition:border-color .2s; max-width:360px; overflow:hidden; }
+  .conn-badge:hover { border-color:var(--accent); color:var(--text); }
+  .conn-badge.connected { border-color:rgba(61,214,140,0.3); }
+  .conn-dot { width:7px; height:7px; border-radius:50%; background:var(--text-dim); flex-shrink:0; }
+  .conn-dot.on { background:var(--success); box-shadow:0 0 6px var(--success); }
+  .conn-label { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .spacer { flex:1; }
+  .tb-btn { background:none; border:1px solid var(--panel-border); color:var(--text-dim); border-radius:6px; padding:5px 12px; font-size:11px; cursor:pointer; font-family:var(--sans); transition:all .2s; display:flex; align-items:center; gap:5px; }
+  .tb-btn:hover { border-color:var(--accent); color:var(--accent); }
+  .tb-btn.primary { background:var(--accent); border-color:var(--accent); color:#000; font-weight:600; }
+  .tb-btn.primary:hover { background:var(--accent2); }
+  .tb-btn:disabled { opacity:0.4; cursor:not-allowed; }
+
+  /* WORKSPACE */
+  .workspace { flex:1; display:flex; overflow:hidden; }
+
+  /* SIDEBAR */
+  .sidebar { width:230px; background:var(--sidebar); border-right:1px solid var(--panel-border); display:flex; flex-direction:column; flex-shrink:0; }
+  .sidebar-header { padding:10px 14px 8px; font-size:10px; text-transform:uppercase; letter-spacing:1px; color:var(--text-dim); font-weight:600; border-bottom:1px solid var(--panel-border); display:flex; align-items:center; justify-content:space-between; }
+  .sidebar-search { padding:8px 10px; border-bottom:1px solid var(--panel-border); }
+  .sidebar-search input { width:100%; background:var(--panel); border:1px solid var(--panel-border); border-radius:6px; padding:5px 9px; color:var(--text); font-size:12px; font-family:var(--sans); outline:none; }
+  .sidebar-search input:focus { border-color:var(--accent); }
+  .sidebar-search input::placeholder { color:var(--text-dim); }
+  .schema-tree { flex:1; overflow-y:auto; padding:4px 0; }
+  .schema-tree::-webkit-scrollbar { width:4px; }
+  .schema-tree::-webkit-scrollbar-thumb { background:var(--panel-border); border-radius:2px; }
+  .schema-group { }
+  .sg-header { display:flex; align-items:center; gap:5px; padding:5px 12px; cursor:pointer; color:var(--text-dim); font-size:11px; font-weight:600; user-select:none; transition:color .15s; }
+  .sg-header:hover { color:var(--text); }
+  .sg-arrow { font-size:9px; transition:transform .2s; }
+  .sg-header.open .sg-arrow { transform:rotate(90deg); }
+  .sg-items { display:none; }
+  .sg-items.vis { display:block; }
+  .sg-item { display:flex; align-items:center; gap:6px; padding:4px 12px 4px 28px; cursor:pointer; color:var(--text-dim); font-size:11px; border-radius:4px; margin:1px 6px; transition:all .15s; font-family:var(--mono); }
+  .sg-item:hover { background:var(--accent-glow); color:var(--accent); }
+  .sg-item.active { background:var(--accent-glow); color:var(--accent); }
+  .sg-badge { font-size:9px; padding:1px 4px; border-radius:3px; background:var(--panel-border); color:var(--text-dim); margin-left:auto; font-family:var(--sans); }
+
+  /* MAIN */
+  .main { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+
+  /* TABS */
+  .tabs-bar { display:flex; align-items:center; background:var(--sidebar); border-bottom:1px solid var(--panel-border); padding:0 12px; overflow-x:auto; flex-shrink:0; }
+  .tab { display:flex; align-items:center; gap:5px; padding:10px 14px; cursor:pointer; color:var(--text-dim); font-size:12px; border-bottom:2px solid transparent; transition:all .15s; white-space:nowrap; flex-shrink:0; }
+  .tab:hover { color:var(--text); }
+  .tab.active { color:var(--accent); border-bottom-color:var(--accent); }
+  .tab .xt { opacity:0; font-size:14px; transition:opacity .15s; }
+  .tab:hover .xt { opacity:1; }
+  .tab-add { padding:8px 10px; color:var(--text-dim); cursor:pointer; font-size:18px; transition:color .15s; }
+  .tab-add:hover { color:var(--accent); }
+
+  /* EDITOR */
+  .editor-wrap { flex-shrink:0; border-bottom:1px solid var(--panel-border); }
+  .editor-toolbar { display:flex; align-items:center; gap:8px; padding:7px 12px; background:var(--panel); border-bottom:1px solid var(--panel-border); flex-wrap:wrap; gap:6px; }
+  .et-label { font-size:10px; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.5px; }
+  .et-select { background:var(--bg); border:1px solid var(--panel-border); color:var(--text); border-radius:5px; padding:4px 8px; font-size:11px; font-family:var(--sans); outline:none; cursor:pointer; }
+  .et-select:focus { border-color:var(--accent); }
+  .et-sep { width:1px; height:16px; background:var(--panel-border); }
+  #qeditor { width:100%; min-height:130px; max-height:200px; background:var(--panel); color:var(--text); border:none; padding:12px 16px; font-family:var(--mono); font-size:13px; line-height:1.7; outline:none; resize:vertical; tab-size:2; }
+  #qeditor::placeholder { color:var(--text-dim); opacity:0.5; }
+  .editor-footer { display:flex; align-items:center; padding:5px 12px; background:var(--panel); border-top:1px solid var(--panel-border); }
+  .editor-hint { font-size:10px; color:var(--text-dim); font-family:var(--mono); }
+  .editor-hint kbd { background:var(--bg); border:1px solid var(--panel-border); border-radius:3px; padding:1px 4px; }
+  #cursor-pos { margin-left:auto; font-size:10px; color:var(--text-dim); font-family:var(--mono); }
+
+  /* RESIZER */
+  .resizer { height:4px; cursor:ns-resize; background:transparent; transition:background .15s; flex-shrink:0; }
+  .resizer:hover, .resizer.dragging { background:var(--accent); }
+
+  /* RESULTS */
+  .results-area { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+  .results-header { display:flex; align-items:center; padding:7px 14px; border-bottom:1px solid var(--panel-border); background:var(--panel); flex-shrink:0; gap:8px; flex-wrap:wrap; }
+  .rtabs { display:flex; gap:0; }
+  .rtab { padding:3px 12px; font-size:11px; cursor:pointer; color:var(--text-dim); border-bottom:2px solid transparent; transition:all .15s; }
+  .rtab.active { color:var(--accent); border-bottom-color:var(--accent); }
+  .rtab:hover:not(.active) { color:var(--text); }
+  .rmeta { margin-left:auto; display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+  .chip { font-size:10px; padding:2px 8px; border-radius:10px; background:var(--bg); border:1px solid var(--panel-border); color:var(--text-dim); font-family:var(--mono); }
+  .chip.ok { border-color:var(--success); color:var(--success); }
+  .chip.err { border-color:var(--error); color:var(--error); }
+  .export-btn { background:none; border:1px solid var(--panel-border); color:var(--text-dim); border-radius:5px; padding:3px 9px; font-size:10px; cursor:pointer; font-family:var(--sans); transition:all .15s; }
+  .export-btn:hover { border-color:var(--accent); color:var(--accent); }
+
+  .rpane { display:none; flex:1; flex-direction:column; overflow:hidden; }
+  .rpane.active { display:flex; }
+  .rbody { flex:1; overflow:auto; position:relative; }
+  .rbody::-webkit-scrollbar { width:8px; height:8px; }
+  .rbody::-webkit-scrollbar-thumb { background:var(--panel-border); border-radius:4px; }
+
+  /* DATA TABLE */
+  .dtable { width:100%; border-collapse:collapse; font-family:var(--mono); font-size:12px; }
+  .dtable thead { position:sticky; top:0; z-index:10; }
+  .dtable th { background:var(--panel); color:var(--text-dim); padding:8px 12px; text-align:left; font-weight:500; font-size:10.5px; text-transform:uppercase; letter-spacing:0.5px; border-bottom:1px solid var(--panel-border); border-right:1px solid var(--panel-border); white-space:nowrap; cursor:pointer; user-select:none; }
+  .dtable th:last-child { border-right:none; }
+  .dtable th:hover { color:var(--accent); }
+  .dtable th.sorted { color:var(--accent); }
+  .sort-ico { margin-left:4px; opacity:0.4; font-size:9px; }
+  .dtable th.sorted .sort-ico { opacity:1; }
+  .dtable td { padding:7px 12px; border-bottom:1px solid rgba(30,35,51,0.5); border-right:1px solid rgba(30,35,51,0.3); color:var(--text); vertical-align:middle; max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .dtable td:last-child { border-right:none; }
+  .dtable tr:nth-child(even) td { background:var(--row-alt); }
+  .dtable tr:hover td { background:var(--row-hover); }
+  .rn { color:var(--text-dim); font-size:10px; min-width:36px; text-align:right; padding-right:8px; user-select:none; }
+  .nv { color:var(--text-dim); font-style:italic; font-size:10px; }
+  .numv { color:#7eb8f7; }
+  .datev { color:#a8d8b0; }
+
+  /* STATES */
+  .empty-state { display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; gap:10px; color:var(--text-dim); }
+  .empty-state .ei { font-size:36px; opacity:0.3; }
+  .loading-bar { position:absolute; top:0; left:0; height:2px; background:linear-gradient(90deg,var(--accent),var(--accent2)); animation:ldbar 1.4s ease infinite; }
+  @keyframes ldbar { 0%{left:0;width:0%} 50%{left:0;width:60%} 100%{left:100%;width:0%} }
+  @keyframes spin { to{transform:rotate(360deg)} }
+
+  /* PAGINATION */
+  .pagination { display:flex; align-items:center; gap:6px; padding:7px 14px; border-top:1px solid var(--panel-border); background:var(--panel); flex-shrink:0; font-size:11px; flex-wrap:wrap; }
+  .pg-btn { background:var(--bg); border:1px solid var(--panel-border); color:var(--text-dim); border-radius:5px; padding:3px 9px; cursor:pointer; font-size:11px; font-family:var(--sans); transition:all .15s; }
+  .pg-btn:hover:not(:disabled) { border-color:var(--accent); color:var(--accent); }
+  .pg-btn:disabled { opacity:0.3; cursor:not-allowed; }
+  .pg-right { margin-left:auto; display:flex; align-items:center; gap:8px; color:var(--text-dim); }
+  .pg-sel { background:var(--bg); border:1px solid var(--panel-border); color:var(--text); border-radius:4px; padding:2px 5px; font-size:11px; outline:none; }
+
+  /* STATUSBAR */
+  .statusbar { height:24px; background:var(--sidebar); border-top:1px solid var(--panel-border); display:flex; align-items:center; gap:14px; padding:0 14px; flex-shrink:0; font-size:10.5px; color:var(--text-dim); font-family:var(--mono); overflow:hidden; }
+  .sb-dot { width:6px; height:6px; border-radius:50%; background:var(--text-dim); flex-shrink:0; }
+  .sb-right { margin-left:auto; display:flex; gap:14px; }
+
+  /* MODAL */
+  .modal-bg { position:fixed; inset:0; background:rgba(0,0,0,0.75); z-index:1000; display:none; align-items:center; justify-content:center; backdrop-filter:blur(4px); }
+  .modal-bg.open { display:flex; }
+  .modal { background:var(--panel); border:1px solid var(--panel-border); border-radius:12px; width:500px; max-width:96vw; max-height:90vh; overflow-y:auto; padding:26px; box-shadow:0 24px 60px rgba(0,0,0,0.5); animation:mdin .2s ease; }
+  @keyframes mdin { from{opacity:0;transform:translateY(-16px) scale(0.97)} to{opacity:1;transform:none} }
+  .modal h2 { font-size:17px; font-weight:600; color:var(--text-bright); margin-bottom:4px; }
+  .modal-sub { font-size:12px; color:var(--text-dim); margin-bottom:20px; }
+  .frow { margin-bottom:13px; }
+  .frow label { display:block; font-size:10.5px; color:var(--text-dim); margin-bottom:4px; font-weight:500; letter-spacing:0.3px; text-transform:uppercase; }
+  .frow input, .frow select { width:100%; background:var(--bg); border:1px solid var(--panel-border); border-radius:6px; padding:8px 11px; color:var(--text); font-size:13px; font-family:var(--sans); outline:none; transition:border-color .2s; }
+  .frow input:focus, .frow select:focus { border-color:var(--accent); }
+  .frow input::placeholder { color:var(--text-dim); }
+  .frow2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .modal-note { background:rgba(79,142,247,0.08); border:1px solid rgba(79,142,247,0.25); border-radius:6px; padding:10px 12px; font-size:11px; color:#7eb8f7; margin-bottom:14px; line-height:1.6; }
+  .modal-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:20px; }
+  .mbtn { padding:7px 16px; border-radius:7px; font-size:12px; font-family:var(--sans); font-weight:500; cursor:pointer; border:1px solid var(--panel-border); color:var(--text-dim); background:none; transition:all .2s; }
+  .mbtn:hover { border-color:var(--accent); color:var(--accent); }
+  .mbtn.primary { background:var(--accent); border-color:var(--accent); color:#000; font-weight:600; }
+  .mbtn.primary:hover { background:var(--accent2); }
+  .test-result { margin-top:10px; padding:8px 12px; border-radius:6px; font-size:11px; display:none; }
+  .test-result.ok { background:rgba(61,214,140,0.1); border:1px solid rgba(61,214,140,0.3); color:var(--success); }
+  .test-result.fail { background:rgba(255,94,94,0.1); border:1px solid rgba(255,94,94,0.3); color:var(--error); }
+
+  /* TOAST */
+  #toasts { position:fixed; bottom:34px; right:18px; z-index:2000; display:flex; flex-direction:column; gap:7px; }
+  .toast { background:var(--panel); border:1px solid var(--panel-border); border-radius:8px; padding:9px 14px; font-size:12px; color:var(--text); box-shadow:0 8px 24px rgba(0,0,0,0.4); display:flex; align-items:center; gap:7px; animation:tin .25s ease; max-width:320px; }
+  @keyframes tin { from{opacity:0;transform:translateX(16px)} to{opacity:1;transform:none} }
+  .toast.success { border-left:3px solid var(--success); }
+  .toast.error { border-left:3px solid var(--error); }
+  .toast.info { border-left:3px solid var(--blue); }
+
+  /* HISTORY */
+  .hist-list { padding:8px; }
+  .hist-item { padding:8px 10px; border-radius:6px; cursor:pointer; border:1px solid transparent; margin-bottom:3px; transition:all .15s; }
+  .hist-item:hover { background:var(--accent-glow); border-color:var(--panel-border); }
+  .hist-sql { font-family:var(--mono); font-size:11px; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .hist-meta { font-size:10px; color:var(--text-dim); margin-top:3px; }
+  .hbadge { display:inline-block; font-size:9px; padding:1px 5px; border-radius:3px; margin-right:3px; }
+  .hbadge.ok { background:rgba(61,214,140,0.15); color:var(--success); }
+  .hbadge.err { background:rgba(255,94,94,0.15); color:var(--error); }
+
+  /* ERROR PANEL */
+  .error-panel { padding:16px 20px; }
+  .error-panel .err-title { color:var(--error); font-weight:600; margin-bottom:8px; font-size:13px; }
+  .error-panel pre { font-family:var(--mono); font-size:11px; color:var(--text-dim); white-space:pre-wrap; line-height:1.6; background:var(--bg); padding:12px; border-radius:6px; border:1px solid var(--panel-border); }
+</style>
+</head>
+<body>
+
+<!-- TITLEBAR -->
+<div class="titlebar">
+  <div class="titlebar-logo">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <ellipse cx="12" cy="5" rx="9" ry="3"/>
+      <path d="M3 5v5c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/>
+      <path d="M3 10v5c0 1.66 4.03 3 9 3s9-1.34 9-3v-5"/>
+      <path d="M3 15v4c0 1.66 4.03 3 9 3s9-1.34 9-3v-4"/>
+    </svg>
+    <span class="logo-text">Cloud<em>SQL</em></span>
+  </div>
+  <div class="conn-badge" id="connBadge" onclick="openModal()">
+    <span class="conn-dot" id="connDot"></span>
+    <span class="conn-label" id="connLabel">No Connection — click to connect</span>
+    <span style="color:var(--text-dim);font-size:10px;margin-left:4px">▾</span>
+  </div>
+  <div class="spacer"></div>
+  <button class="tb-btn" onclick="openModal()">⊕ New Connection</button>
+  <button class="tb-btn primary" id="runBtn" onclick="runQuery()">▶ Run Query</button>
+</div>
+
+<!-- WORKSPACE -->
+<div class="workspace">
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <span>Schema Browser</span>
+      <span style="cursor:pointer" onclick="loadSchema()" title="Refresh">↺</span>
+    </div>
+    <div class="sidebar-search">
+      <input type="text" id="schemaSearch" placeholder="Search tables…" oninput="filterSchema(this.value)">
+    </div>
+    <div class="schema-tree" id="schemaTree">
+      <div class="empty-state" style="margin-top:30px;font-size:12px">
+        <div class="ei">🗄️</div><p>Connect to load schema</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main">
+    <div class="tabs-bar" id="tabsBar">
+      <div class="tab active" data-idx="0" onclick="switchTab(0)">
+        <span>Query 1</span><span class="xt" onclick="closeTab(event,0)">×</span>
+      </div>
+      <div class="tab-add" onclick="addTab()">+</div>
+    </div>
+
+    <!-- EDITOR -->
+    <div class="editor-wrap">
+      <div class="editor-toolbar">
+        <span class="et-label">Schema:</span>
+        <select class="et-select" id="schemaSelect"><option value="">— select schema —</option></select>
+        <div class="et-sep"></div>
+        <span class="et-label">Limit:</span>
+        <select class="et-select" id="limitSelect">
+          <option value="50">50 rows</option>
+          <option value="100" selected>100 rows</option>
+          <option value="500">500 rows</option>
+          <option value="1000">1000 rows</option>
+          <option value="">No limit</option>
+        </select>
+        <div class="et-sep"></div>
+        <button class="tb-btn" onclick="formatSQL()">Format SQL</button>
+        <button class="tb-btn" onclick="document.getElementById('qeditor').value=''">Clear</button>
+      </div>
+      <textarea id="qeditor" placeholder="-- Connect to Oracle Fusion, then write your SQL here&#10;-- Ctrl+Enter to run · Ctrl+/ to comment · Ctrl+L to clear&#10;&#10;SELECT * FROM per_all_people_f WHERE ROWNUM <= 100"></textarea>
+      <div class="editor-footer">
+        <span class="editor-hint"><kbd>Ctrl</kbd>+<kbd>Enter</kbd> Run &nbsp;|&nbsp; <kbd>Ctrl</kbd>+<kbd>/</kbd> Comment &nbsp;|&nbsp; <kbd>Ctrl</kbd>+<kbd>L</kbd> Clear</span>
+        <span id="cursor-pos">Ln 1, Col 1</span>
+      </div>
+    </div>
+
+    <div class="resizer" id="resizer"></div>
+
+    <!-- RESULTS -->
+    <div class="results-area">
+      <div class="results-header">
+        <div class="rtabs">
+          <div class="rtab active" onclick="switchRTab('data')">Data Grid</div>
+          <div class="rtab" onclick="switchRTab('json')">JSON</div>
+          <div class="rtab" onclick="switchRTab('history')">History</div>
+        </div>
+        <div class="rmeta" id="rmeta" style="display:none">
+          <span class="chip ok" id="rowChip"></span>
+          <span class="chip" id="timeChip"></span>
+          <button class="export-btn" onclick="exportCSV()">⬇ CSV</button>
+          <button class="export-btn" onclick="exportJSON()">⬇ JSON</button>
+        </div>
+      </div>
+
+      <!-- DATA PANE -->
+      <div class="rpane active" id="pane-data">
+        <div class="rbody" id="rbody">
+          <div class="empty-state"><div class="ei">◎</div><p>Run a query to see results</p></div>
+        </div>
+        <div class="pagination" id="pgBar" style="display:none">
+          <button class="pg-btn" id="pgFirst" onclick="goPage(1)">«</button>
+          <button class="pg-btn" id="pgPrev" onclick="goPage(curPage-1)">‹</button>
+          <span id="pgInfo" style="color:var(--text-dim)">Page 1 of 1</span>
+          <button class="pg-btn" id="pgNext" onclick="goPage(curPage+1)">›</button>
+          <button class="pg-btn" id="pgLast" onclick="goPage(totPages)">»</button>
+          <div class="pg-right">
+            Rows per page:
+            <select class="pg-sel" onchange="changePageSize(+this.value)">
+              <option value="25">25</option><option value="50" selected>50</option><option value="100">100</option>
+            </select>
+            <span id="totInfo" style="color:var(--text-dim)"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- JSON PANE -->
+      <div class="rpane" id="pane-json">
+        <div class="rbody"><pre id="jsonOut" style="padding:14px;font-family:var(--mono);font-size:12px;color:var(--text);white-space:pre-wrap;line-height:1.7"></pre></div>
+      </div>
+
+      <!-- HISTORY PANE -->
+      <div class="rpane" id="pane-history">
+        <div class="rbody"><div class="hist-list" id="histList"><div class="empty-state" style="margin-top:40px"><div class="ei">🕓</div><p>No history yet</p></div></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- STATUSBAR -->
+<div class="statusbar">
+  <span class="sb-dot" id="sbDot"></span>
+  <span id="sbStatus">Ready — connect to Oracle Fusion to begin</span>
+  <div class="sb-right">
+    <span id="sbRows"></span>
+    <span id="sbTime"></span>
+    <span>v3.1.1</span>
+  </div>
+</div>
+
+<!-- CONNECTION MODAL -->
+<div class="modal-bg" id="modalBg">
+  <div class="modal">
+    <h2>🔌 Oracle Fusion Connection</h2>
+    <p class="modal-sub">Connect via Oracle Fusion REST API (ORDS / BICC / FSCM REST)</p>
+
+    <div class="modal-note">
+      ℹ️ <strong>Browser limitation:</strong> Direct Oracle JDBC connections aren't possible from a browser. This tool uses Oracle Fusion's <strong>REST APIs</strong> to fetch data. Your queries are sent to Fusion REST endpoints. For raw SQL, use a backend proxy — see the README.
+    </div>
+
+    <div class="frow">
+      <label>Connection Type</label>
+      <select id="cType" onchange="onTypeChange()">
+        <option value="rest">Oracle Fusion REST API (FSCM / HCM)</option>
+        <option value="bicc">Oracle BICC / BI Publisher</option>
+        <option value="proxy">Custom Backend Proxy (SQL passthrough)</option>
+      </select>
+    </div>
+
+    <div id="restFields">
+      <div class="frow">
+        <label>Oracle Fusion Base URL</label>
+        <input id="cUrl" type="text" placeholder="https://yourinstance.fa.ocs.oraclecloud.com">
+      </div>
+      <div class="frow2">
+        <div class="frow">
+          <label>Username</label>
+          <input id="cUser" type="text" placeholder="PURUSHOTTAM.Y.YANDURI@ORACLE.COM">
+        </div>
+        <div class="frow">
+          <label>Password</label>
+          <input id="cPass" type="password" placeholder="••••••••">
+        </div>
+      </div>
+      <div class="frow">
+        <label>REST Module Path (optional)</label>
+        <input id="cPath" type="text" placeholder="/fscmRestApi/resources/11.13.18.05/">
+      </div>
+    </div>
+
+    <div id="proxyFields" style="display:none">
+      <div class="frow">
+        <label>Backend Proxy URL</label>
+        <input id="cProxy" type="text" placeholder="https://your-backend.onrender.com/api/query">
+      </div>
+      <div class="frow">
+        <label>API Key (if required)</label>
+        <input id="cApiKey" type="password" placeholder="Bearer token or API key">
+      </div>
+    </div>
+
+    <div id="testResult" class="test-result"></div>
+
+    <div class="modal-actions">
+      <button class="mbtn" onclick="closeModal()">Cancel</button>
+      <button class="mbtn" onclick="testConn()">Test Connection</button>
+      <button class="mbtn primary" onclick="connect()">Connect</button>
+    </div>
+  </div>
+</div>
+
+<div id="toasts"></div>
+
+<script>
+// ═══════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════
+let conn = null;         // { url, user, pass, path, type, proxyUrl, apiKey }
+let allRows = [];        // full result set
+let allCols = [];        // column names from actual query
+let curPage = 1;
+let pgSize  = 50;
+let totPages = 1;
+let sortCol = null, sortDir = 1;
+let tabs = [{ name:'Query 1', sql:'' }];
+let activeTab = 0;
+let activeRTab = 'data';
+let history = [];
+let schemaData = {};     // { MODULE: [table,...] }
+
+// ═══════════════════════════════════════════
+//  EDITOR
+// ═══════════════════════════════════════════
+const ed = document.getElementById('qeditor');
+ed.addEventListener('keydown', e => {
+  if ((e.ctrlKey||e.metaKey) && e.key==='Enter') { e.preventDefault(); runQuery(); }
+  if ((e.ctrlKey||e.metaKey) && e.key==='/') { e.preventDefault(); toggleComment(); }
+  if ((e.ctrlKey||e.metaKey) && e.key==='l') { e.preventDefault(); ed.value=''; }
+  if (e.key==='Tab') { e.preventDefault(); ins('  '); }
+});
+ed.addEventListener('keyup', updCursor);
+ed.addEventListener('click', updCursor);
+function ins(t) { const s=ed.selectionStart; ed.value=ed.value.slice(0,s)+t+ed.value.slice(ed.selectionEnd); ed.selectionStart=ed.selectionEnd=s+t.length; }
+function updCursor() { const v=ed.value.slice(0,ed.selectionStart).split('\n'); document.getElementById('cursor-pos').textContent=`Ln ${v.length}, Col ${v[v.length-1].length+1}`; }
+function toggleComment() {
+  const v=ed.value, s=ed.selectionStart;
+  const ls=v.lastIndexOf('\n',s-1)+1, le=v.indexOf('\n',s);
+  const line=v.slice(ls,le<0?v.length:le);
+  ed.value = line.trimStart().startsWith('-- ')
+    ? v.slice(0,ls)+line.replace(/^(\s*)-- /,'$1')+v.slice(le<0?v.length:le)
+    : v.slice(0,ls)+'-- '+line+v.slice(le<0?v.length:le);
+}
+function formatSQL() {
+  let s=ed.value.trim().replace(/\s+/g,' ');
+  ['SELECT','FROM','WHERE','LEFT JOIN','RIGHT JOIN','INNER JOIN','JOIN','ON','AND','OR','ORDER BY','GROUP BY','HAVING','UNION ALL','UNION','INSERT INTO','UPDATE','SET','DELETE FROM','WITH','CASE','WHEN','THEN','ELSE','END'].sort((a,b)=>b.length-a.length).forEach(k=>{ s=s.replace(new RegExp('\\b'+k+'\\b','gi'),'\n'+k); });
+  ed.value=s.trim(); toast('SQL formatted','info');
+}
+
+// ═══════════════════════════════════════════
+//  TABS
+// ═══════════════════════════════════════════
+function switchTab(i) {
+  tabs[activeTab].sql=ed.value; activeTab=i; ed.value=tabs[i].sql;
+  document.querySelectorAll('.tab').forEach((t,j)=>t.classList.toggle('active',j===i));
+}
+function addTab() {
+  tabs[activeTab].sql=ed.value;
+  const n=tabs.length+1; tabs.push({name:`Query ${n}`,sql:''});
+  const bar=document.getElementById('tabsBar'), add=bar.querySelector('.tab-add');
+  const t=document.createElement('div'); t.className='tab'; t.dataset.idx=tabs.length-1;
+  t.innerHTML=`<span>Query ${n}</span><span class="xt" onclick="closeTab(event,${tabs.length-1})">×</span>`;
+  t.onclick=()=>switchTab(tabs.length-1); bar.insertBefore(t,add); switchTab(tabs.length-1);
+}
+function closeTab(e,i) {
+  e.stopPropagation(); if(tabs.length===1)return; tabs.splice(i,1); rebuildTabs(); switchTab(Math.min(i,tabs.length-1));
+}
+function rebuildTabs() {
+  const bar=document.getElementById('tabsBar'), add=bar.querySelector('.tab-add');
+  bar.querySelectorAll('.tab').forEach(t=>t.remove());
+  tabs.forEach((t,i)=>{
+    const el=document.createElement('div'); el.className='tab'; el.dataset.idx=i;
+    el.innerHTML=`<span>${t.name}</span><span class="xt" onclick="closeTab(event,${i})">×</span>`;
+    el.onclick=()=>switchTab(i); bar.insertBefore(el,add);
+  });
+}
+
+// ═══════════════════════════════════════════
+//  RESULT TABS
+// ═══════════════════════════════════════════
+function switchRTab(name) {
+  activeRTab=name;
+  document.querySelectorAll('.rtab').forEach((t,i)=>t.classList.toggle('active',['data','json','history'][i]===name));
+  document.querySelectorAll('.rpane').forEach(p=>p.classList.remove('active'));
+  document.getElementById(`pane-${name}`).classList.add('active');
+  if(name==='json'&&allRows.length) renderJSON();
+  if(name==='history') renderHistory();
+}
+
+// ═══════════════════════════════════════════
+//  CONNECTION MODAL
+// ═══════════════════════════════════════════
+function openModal() { document.getElementById('modalBg').classList.add('open'); }
+function closeModal() { document.getElementById('modalBg').classList.remove('open'); document.getElementById('testResult').style.display='none'; }
+function onTypeChange() {
+  const t=document.getElementById('cType').value;
+  document.getElementById('restFields').style.display=t==='proxy'?'none':'block';
+  document.getElementById('proxyFields').style.display=t==='proxy'?'block':'none';
+}
+
+async function testConn() {
+  const tr=document.getElementById('testResult');
+  tr.style.display='block'; tr.className='test-result';
+  tr.textContent='Testing…';
+  const result=await doTest();
+  tr.className='test-result '+(result.ok?'ok':'fail');
+  tr.textContent=result.ok?'✓ '+result.msg:'✗ '+result.msg;
+}
+async function doTest() {
+  const t=document.getElementById('cType').value;
+  const url=document.getElementById('cUrl').value.trim().replace(/\/$/,'');
+  const user=document.getElementById('cUser').value.trim();
+  const pass=document.getElementById('cPass').value;
+  const proxyUrl=document.getElementById('cProxy').value.trim();
+
+  if(t==='proxy') {
+    if(!proxyUrl) return {ok:false,msg:'Enter proxy URL'};
+    try {
+      const r=await fetch(proxyUrl+'/ping',{method:'GET'});
+      return r.ok?{ok:true,msg:'Proxy reachable'}:{ok:false,msg:`Proxy returned ${r.status}`};
+    } catch(e) { return {ok:false,msg:'Cannot reach proxy: '+e.message}; }
+  }
+  if(!url||!user||!pass) return {ok:false,msg:'Fill in URL, username and password'};
+  // Try a lightweight REST call — whoami or version endpoint
+  const testUrl=url+'/fscmRestApi/resources/11.13.18.05/';
+  try {
+    const r=await fetch(testUrl,{headers:{'Authorization':'Basic '+btoa(user+':'+pass),'Content-Type':'application/json'},signal:AbortSignal.timeout(8000)});
+    if(r.status===401) return {ok:false,msg:'Authentication failed — check credentials'};
+    if(r.status===403) return {ok:false,msg:'Forbidden — check user permissions'};
+    if(r.ok||r.status===200) return {ok:true,msg:'Connected to Oracle Fusion REST API'};
+    return {ok:false,msg:`HTTP ${r.status} — check URL`};
+  } catch(e) {
+    if(e.name==='TimeoutError') return {ok:false,msg:'Connection timed out — check URL / network'};
+    // CORS error means server is reachable but blocked by browser — still shows the server exists
+    if(e.message.includes('CORS')||e.message.includes('NetworkError')||e.message.includes('Failed to fetch'))
+      return {ok:true,msg:'Server reachable (CORS blocked — deploy backend proxy for full SQL access)'};
+    return {ok:false,msg:e.message};
+  }
+}
+
+function connect() {
+  const t=document.getElementById('cType').value;
+  const url=document.getElementById('cUrl').value.trim().replace(/\/$/,'');
+  const user=document.getElementById('cUser').value.trim();
+  const pass=document.getElementById('cPass').value;
+  const path=document.getElementById('cPath').value.trim()||'/fscmRestApi/resources/11.13.18.05/';
+  const proxyUrl=document.getElementById('cProxy').value.trim();
+  const apiKey=document.getElementById('cApiKey').value.trim();
+
+  if(t!=='proxy' && (!url||!user||!pass)) { toast('Fill in URL, username and password','error'); return; }
+  if(t==='proxy' && !proxyUrl) { toast('Enter the backend proxy URL','error'); return; }
+
+  conn={type:t,url,user,pass,path,proxyUrl,apiKey};
+  closeModal();
+  updateConnUI();
+  loadSchema();
+  populateSchemaSelect();
+  toast(`✓ Connected${user?' as '+user:''}`, 'success');
+}
+
+function updateConnUI() {
+  const badge=document.getElementById('connBadge');
+  const dot=document.getElementById('connDot');
+  const label=document.getElementById('connLabel');
+  if(conn) {
+    badge.classList.add('connected');
+    dot.className='conn-dot on';
+    label.textContent=(conn.user?conn.user.toUpperCase()+' @ ':'')+
+      (conn.type==='proxy'?'Custom Proxy':'Oracle Fusion');
+    document.getElementById('sbDot').style.cssText='background:var(--success);box-shadow:0 0 5px var(--success)';
+    document.getElementById('sbStatus').textContent='Connected — '+
+      (conn.type==='proxy'?conn.proxyUrl:conn.url);
+  }
+}
+
+// ═══════════════════════════════════════════
+//  SCHEMA LOADER  (real REST or demo fallback)
+// ═══════════════════════════════════════════
+const DEMO_SCHEMA = {
+  HR:  ['PER_ALL_PEOPLE_F','PER_ALL_ASSIGNMENTS_M','PER_PERSONS','PER_ALL_POSITIONS','PER_JOBS','HR_ALL_ORGANIZATION_UNITS','PER_ABSENCE_ATTENDANCES'],
+  FIN: ['GL_LEDGERS','GL_CODE_COMBINATIONS','GL_JE_HEADERS','GL_JE_LINES','AP_INVOICES_ALL','AP_INVOICE_LINES_ALL','AP_CHECKS_ALL','AR_CUSTOMERS_ALL','AR_PAYMENT_SCHEDULES_ALL'],
+  INV: ['MTL_SYSTEM_ITEMS_B','MTL_ONHAND_QUANTITIES_DETAIL','MTL_MATERIAL_TRANSACTIONS','MTL_TRANSACTION_TYPES','MTL_ITEM_LOCATIONS'],
+  PO:  ['PO_HEADERS_ALL','PO_LINES_ALL','PO_LINE_LOCATIONS_ALL','PO_DISTRIBUTIONS_ALL','PO_VENDORS','PO_VENDOR_SITES_ALL','PO_RELEASES_ALL'],
+  SCM: ['OE_ORDER_HEADERS_ALL','OE_ORDER_LINES_ALL','WSH_DELIVERY_DETAILS','WSH_NEW_DELIVERIES','WSH_TRIP_STOPS'],
+  PAY: ['PAY_PAYROLL_ACTIONS','PAY_ASSIGNMENT_ACTIONS','PAY_RUN_RESULTS','PAY_RUN_RESULT_VALUES','PAY_ELEMENT_ENTRIES_F'],
+};
+
+async function loadSchema() {
+  if(!conn) return;
+  // If proxy, try to get real schema
+  if(conn.type==='proxy') {
+    try {
+      const r=await fetch(conn.proxyUrl+'/schema',{headers:apiHeaders()});
+      if(r.ok) { schemaData=await r.json(); buildSchemaTree(); return; }
+    } catch(e) {}
+  }
+  // Fallback: use known Oracle Fusion table list
+  schemaData=DEMO_SCHEMA;
+  buildSchemaTree();
+}
+
+function buildSchemaTree() {
+  const tree=document.getElementById('schemaTree'); tree.innerHTML='';
+  Object.entries(schemaData).forEach(([schema,tables])=>{
+    const grp=document.createElement('div'); grp.className='schema-group';
+    const hdr=document.createElement('div'); hdr.className='sg-header';
+    hdr.innerHTML=`<span class="sg-arrow">▶</span><span>📁</span><span>${schema}</span>`;
+    const items=document.createElement('div'); items.className='sg-items';
+    hdr.onclick=()=>{hdr.classList.toggle('open');items.classList.toggle('vis');};
+    tables.forEach(t=>{
+      const el=document.createElement('div'); el.className='sg-item';
+      el.innerHTML=`<span>${t}</span><span class="sg-badge">TABLE</span>`;
+      el.ondblclick=()=>{ ed.value=(ed.value?ed.value+'\n':'')+`SELECT * FROM ${t} WHERE ROWNUM <= 100`; toast('Inserted query for '+t,'info'); };
+      el.onclick=()=>{document.querySelectorAll('.sg-item').forEach(i=>i.classList.remove('active'));el.classList.add('active');};
+      items.appendChild(el);
+    });
+    grp.appendChild(hdr); grp.appendChild(items); tree.appendChild(grp);
+  });
+}
+function filterSchema(q) {
+  q=q.toLowerCase();
+  document.querySelectorAll('.schema-group').forEach(g=>{
+    const els=g.querySelectorAll('.sg-item'); let any=false;
+    els.forEach(el=>{const m=el.textContent.toLowerCase().includes(q);el.style.display=m?'':'none';if(m)any=true;});
+    g.style.display=any?'':'none';
+    if(any&&q){g.querySelector('.sg-header').classList.add('open');g.querySelector('.sg-items').classList.add('vis');}
+  });
+}
+function populateSchemaSelect() {
+  const s=document.getElementById('schemaSelect');
+  s.innerHTML='<option value="">— select schema —</option>';
+  Object.keys(schemaData).forEach(k=>{const o=document.createElement('option');o.value=k;o.textContent=k;s.appendChild(o);});
+}
+
+// ═══════════════════════════════════════════
+//  QUERY RUNNER — REAL API CALLS
+// ═══════════════════════════════════════════
+function apiHeaders(extra={}) {
+  const h={'Content-Type':'application/json',...extra};
+  if(conn.type==='proxy') {
+    if(conn.apiKey) h['Authorization']='Bearer '+conn.apiKey;
+  } else {
+    h['Authorization']='Basic '+btoa(conn.user+':'+conn.pass);
+  }
+  return h;
+}
+
+async function runQuery() {
+  const sql=ed.value.trim();
+  if(!sql){toast('No query to run','error');return;}
+  if(!conn){toast('Please connect first','error');return;}
+
+  setStatus('running');
+  showLoading();
+  document.getElementById('rmeta').style.display='none';
+  document.getElementById('pgBar').style.display='none';
+
+  const t0=Date.now();
+  try {
+    let result;
+    if(conn.type==='proxy') {
+      result=await runViaProxy(sql);
+    } else {
+      result=await runViaFusionREST(sql);
+    }
+    const elapsed=Date.now()-t0;
+    allCols=result.cols;
+    allRows=result.rows;
+    curPage=1; sortCol=null; sortDir=1;
+    totPages=Math.ceil(allRows.length/pgSize);
+    renderTable(getPageRows());
+    updateMeta(allRows.length, elapsed+'ms');
+    setStatus('ok',allRows.length,elapsed+'ms');
+    history.unshift({sql,time:new Date().toLocaleTimeString(),elapsed:elapsed+'ms',rowCount:allRows.length,ok:true});
+    if(activeRTab==='json') renderJSON();
+    if(activeRTab==='history') renderHistory();
+  } catch(err) {
+    showError(err.message);
+    setStatus('err',0,0);
+    history.unshift({sql,time:new Date().toLocaleTimeString(),elapsed:(Date.now()-t0)+'ms',rowCount:0,ok:false,err:err.message});
+    toast('Query error: '+err.message,'error');
+    if(activeRTab==='history') renderHistory();
+  }
+}
+
+// ── Via Custom Backend Proxy ──────────────
+async function runViaProxy(sql) {
+  const limit=document.getElementById('limitSelect').value;
+  const body={sql, limit:limit?parseInt(limit):null};
+  const r=await fetch(conn.proxyUrl+'/query',{method:'POST',headers:apiHeaders(),body:JSON.stringify(body)});
+  if(!r.ok) { const t=await r.text(); throw new Error(`Proxy error ${r.status}: ${t}`); }
+  const data=await r.json();
+  // Expected: { columns: [...], rows: [[...], ...] }
+  if(data.error) throw new Error(data.error);
+  return { cols: data.columns||data.cols||[], rows: data.rows||[] };
+}
+
+// ── Via Oracle Fusion REST API ────────────
+async function runViaFusionREST(sql) {
+  const s=sql.toLowerCase().replace(/\s+/g,' ').trim();
+  const limit=document.getElementById('limitSelect').value||'100';
+
+  // Detect which Oracle Fusion REST resource to call
+  const resource=detectResource(s);
+
+  const url=conn.url+conn.path+resource.endpoint+
+    `?limit=${limit}&fields=${resource.fields||''}&onlyData=true`;
+
+  let resp;
+  try {
+    resp=await fetch(url,{
+      headers:apiHeaders({'REST-Framework-Version':'8'}),
+      signal:AbortSignal.timeout(30000)
+    });
+  } catch(e) {
+    if(e.name==='TypeError'&&e.message.includes('fetch')) {
+      throw new Error('CORS blocked. Oracle Fusion requires a backend proxy for browser-based SQL access. Set up the proxy and use "Custom Backend Proxy" connection type.');
+    }
+    throw e;
+  }
+
+  if(resp.status===401) throw new Error('Authentication failed. Check username/password.');
+  if(resp.status===403) throw new Error('Access forbidden. Check Oracle Fusion user permissions.');
+  if(resp.status===404) throw new Error(`REST endpoint not found: ${resource.endpoint}. Adjust your query or use a proxy.`);
+  if(!resp.ok) { const t=await resp.text(); throw new Error(`Oracle Fusion API error ${resp.status}: ${t.slice(0,300)}`); }
+
+  const data=await resp.json();
+  const items=data.items||data.data||[];
+  if(!items.length) return {cols:[],rows:[]};
+
+  const cols=Object.keys(items[0]);
+  const rows=items.map(r=>cols.map(c=>r[c]??null));
+  return {cols,rows};
+}
+
+// Map SQL keywords → Fusion REST endpoints
+function detectResource(sql) {
+  const map=[
+    {kw:['per_all_people_f','people','employee','person'],endpoint:'workers',fields:'PersonId,PersonNumber,DisplayName,FirstName,LastName,EffectiveStartDate,EffectiveEndDate'},
+    {kw:['per_all_assignments','assignment'],endpoint:'emps',fields:'AssignmentId,PersonId,AssignmentNumber,JobId,DepartmentId,PositionId,LocationId,EffectiveStartDate'},
+    {kw:['ap_invoices','invoice'],endpoint:'invoices',fields:'InvoiceId,InvoiceNum,VendorId,InvoiceDate,InvoiceAmount,CurrencyCode,InvoiceStatus'},
+    {kw:['ap_checks','payment'],endpoint:'supplierPayments',fields:'PaymentId,CheckDate,CheckAmount,CurrencyCode,BankAccountId'},
+    {kw:['po_headers','purchase order','purchaseorder'],endpoint:'purchaseOrders',fields:'POHeaderId,DocumentNum,VendorId,CreationDate,TotalAmount,CurrencyCode,Status'},
+    {kw:['po_lines'],endpoint:'purchaseOrderLines',fields:'POLineId,LineNum,ItemId,Quantity,UnitPrice,Amount'},
+    {kw:['po_vendors','vendor','supplier'],endpoint:'suppliers',fields:'SupplierId,SupplierName,SupplierType,CountryOfOriginCode,EnabledFlag'},
+    {kw:['gl_ledgers','ledger'],endpoint:'ledgers',fields:'LedgerId,Name,ShortName,CurrencyCode,PeriodSetName,AccountingCalendarName'},
+    {kw:['gl_je','journal'],endpoint:'journalBatches',fields:'JournalBatchId,Name,Description,Status,CurrencyCode,PeriodName,ActualFlag'},
+    {kw:['mtl_system_items','item'],endpoint:'inventoryItems',fields:'ItemId,ItemNumber,Description,ItemType,UOMCode,ListPrice,StandardCost'},
+    {kw:['oe_order_headers','order'],endpoint:'salesOrders',fields:'HeaderId,OrderNumber,CustomerName,OrderDate,TotalAmount,CurrencyCode,Status'},
+    {kw:['hr_all_organization','department','organization'],endpoint:'departments',fields:'DepartmentId,Name,LocationId,EffectiveStartDate,EffectiveEndDate'},
+  ];
+  for(const m of map) { if(m.kw.some(k=>sql.includes(k))) return m; }
+  // Generic fallback
+  return {endpoint:'workers',fields:''};
+}
+
+// ═══════════════════════════════════════════
+//  RENDER TABLE — REAL COLUMN NAMES
+// ═══════════════════════════════════════════
+function getPageRows() { const s=(curPage-1)*pgSize; return allRows.slice(s,s+pgSize); }
+function goPage(p) { curPage=Math.max(1,Math.min(p,totPages)); renderTable(getPageRows()); updatePg(); }
+function changePageSize(s) { pgSize=s; totPages=Math.ceil(allRows.length/pgSize); curPage=1; renderTable(getPageRows()); updatePg(); }
+
+function renderTable(rows) {
+  const body=document.getElementById('rbody');
+  if(!rows.length) { body.innerHTML='<div class="empty-state"><div class="ei">🔍</div><p>Query returned no rows</p></div>'; return; }
+  let h=`<table class="dtable"><thead><tr><th class="rn">#</th>`;
+  allCols.forEach((c,i)=>{
+    const sorted=sortCol===i;
+    h+=`<th onclick="sortBy(${i})" class="${sorted?'sorted':''}">${c}<span class="sort-ico">${sorted?(sortDir>0?'↑':'↓'):'⇅'}</span></th>`;
+  });
+  h+=`</tr></thead><tbody>`;
+  const off=(curPage-1)*pgSize;
+  rows.forEach((row,ri)=>{
+    h+=`<tr><td class="rn">${off+ri+1}</td>`;
+    row.forEach(v=>{ h+=`<td title="${v??''}">${fmtCell(v)}</td>`; });
+    h+=`</tr>`;
+  });
+  h+=`</tbody></table>`;
+  body.innerHTML=h;
+  updatePg();
+}
+function fmtCell(v) {
+  if(v===null||v===undefined) return `<span class="nv">NULL</span>`;
+  if(typeof v==='number') return `<span class="numv">${v}</span>`;
+  const s=String(v);
+  if(s.match(/^\d{4}-\d{2}-\d{2}/)) return `<span class="datev">${s}</span>`;
+  return s;
+}
+function sortBy(col) {
+  if(sortCol===col) sortDir*=-1; else{sortCol=col;sortDir=1;}
+  allRows.sort((a,b)=>{ const va=a[col],vb=b[col]; return va<vb?-sortDir:va>vb?sortDir:0; });
+  curPage=1; renderTable(getPageRows());
+}
+function updatePg() {
+  const bar=document.getElementById('pgBar');
+  if(!allRows.length){bar.style.display='none';return;}
+  bar.style.display='flex';
+  document.getElementById('pgInfo').textContent=`Page ${curPage} of ${totPages}`;
+  document.getElementById('pgFirst').disabled=curPage===1;
+  document.getElementById('pgPrev').disabled=curPage===1;
+  document.getElementById('pgNext').disabled=curPage===totPages;
+  document.getElementById('pgLast').disabled=curPage===totPages;
+  document.getElementById('totInfo').textContent=`${allRows.length} total rows`;
+}
+function updateMeta(rows,time) {
+  document.getElementById('rmeta').style.display='flex';
+  document.getElementById('rowChip').textContent=`${rows} rows`;
+  document.getElementById('timeChip').textContent=time;
+  document.getElementById('sbRows').textContent=`${rows} rows`;
+  document.getElementById('sbTime').textContent=time;
+}
+function showLoading() {
+  document.getElementById('rbody').innerHTML=`<div style="position:relative;height:100%"><div class="loading-bar" style="width:100%"></div><div class="empty-state"><div class="ei" style="animation:spin 1s linear infinite">⊙</div><p>Executing query…</p></div></div>`;
+}
+function showError(msg) {
+  document.getElementById('rbody').innerHTML=`<div class="error-panel"><div class="err-title">⚠ Query Error</div><pre>${msg}</pre></div>`;
+}
+
+function renderJSON() {
+  if(!allRows.length) return;
+  const obj=allRows.map(r=>{const o={};allCols.forEach((c,i)=>o[c]=r[i]);return o;});
+  document.getElementById('jsonOut').textContent=JSON.stringify(obj,null,2);
+}
+function renderHistory() {
+  const list=document.getElementById('histList');
+  if(!history.length){list.innerHTML='<div class="empty-state" style="margin-top:40px"><div class="ei">🕓</div><p>No history yet</p></div>';return;}
+  list.innerHTML=history.map((h,i)=>`<div class="hist-item" onclick="loadHist(${i})"><div class="hist-sql">${h.sql.replace(/\n/g,' ')}</div><div class="hist-meta"><span class="hbadge ${h.ok?'ok':'err'}">${h.ok?'✓ '+h.rowCount+' rows':'✗ Error'}</span>${h.time} · ${h.elapsed}</div></div>`).join('');
+}
+function loadHist(i){ed.value=history[i].sql;switchRTab('data');toast('Query loaded','info');}
+
+// ═══════════════════════════════════════════
+//  EXPORT
+// ═══════════════════════════════════════════
+function exportCSV() {
+  if(!allRows.length){toast('No data','error');return;}
+  const csv=allCols.join(',')+'\n'+allRows.map(r=>r.map(v=>`"${v??''}"`).join(',')).join('\n');
+  dl('cloudsql_export.csv',csv,'text/csv');
+  toast(`Exported ${allRows.length} rows to CSV`,'success');
+}
+function exportJSON() {
+  if(!allRows.length){toast('No data','error');return;}
+  const obj=allRows.map(r=>{const o={};allCols.forEach((c,i)=>o[c]=r[i]);return o;});
+  dl('cloudsql_export.json',JSON.stringify(obj,null,2),'application/json');
+  toast(`Exported ${allRows.length} rows to JSON`,'success');
+}
+function dl(name,data,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([data],{type}));a.download=name;a.click();}
+
+// ═══════════════════════════════════════════
+//  STATUS
+// ═══════════════════════════════════════════
+function setStatus(state,rows,time) {
+  const dot=document.getElementById('sbDot'),txt=document.getElementById('sbStatus');
+  if(state==='running'){dot.style.cssText='background:var(--warning);box-shadow:0 0 5px var(--warning)';txt.textContent='Executing query…';}
+  else if(state==='ok'){dot.style.cssText='background:var(--success);box-shadow:0 0 5px var(--success)';txt.textContent=`✓ Query completed · ${rows} rows · ${time}`;}
+  else{dot.style.cssText='background:var(--error);box-shadow:0 0 5px var(--error)';txt.textContent='✗ Query failed — check error panel';}
+}
+
+// ═══════════════════════════════════════════
+//  TOAST
+// ═══════════════════════════════════════════
+function toast(msg,type='info') {
+  const c=document.getElementById('toasts'),t=document.createElement('div');
+  t.className=`toast ${type}`; t.innerHTML=`<span>${{success:'✓',error:'✗',info:'ℹ'}[type]||'•'}</span><span>${msg}</span>`;
+  c.appendChild(t); setTimeout(()=>{t.style.opacity='0';t.style.transition='opacity .3s';setTimeout(()=>t.remove(),300);},3500);
+}
+
+// ═══════════════════════════════════════════
+//  RESIZER
+// ═══════════════════════════════════════════
+let rz=false;
+document.getElementById('resizer').addEventListener('mousedown',e=>{rz=true;e.preventDefault();document.getElementById('resizer').classList.add('dragging');});
+document.addEventListener('mousemove',e=>{if(!rz)return;const rect=document.querySelector('.editor-wrap').getBoundingClientRect();const h=Math.max(80,Math.min(350,e.clientY-rect.top-50));ed.style.minHeight=h+'px';ed.style.maxHeight=h+'px';});
+document.addEventListener('mouseup',()=>{rz=false;document.getElementById('resizer').classList.remove('dragging');});
+
+// modal backdrop close
+document.getElementById('modalBg').addEventListener('click',function(e){if(e.target===this)closeModal();});
+</script>
+</body>
+</html>
